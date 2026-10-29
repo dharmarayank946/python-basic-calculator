@@ -116,6 +116,30 @@ export default function App() {
     const val = parseFloat(display)
     if (isNaN(val)) return
 
+    // Call Render backend API if available
+    if (API_BASE) {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/calculator/function`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operation: op, value: val })
+        })
+        const data = await res.json()
+        if (data.success) {
+          setDisplay(data.formatted)
+          setIsNewCalculation(true)
+          return
+        } else if (data.error) {
+          setDisplay(data.error)
+          setIsNewCalculation(true)
+          return
+        }
+      } catch (err) {
+        console.warn('Function API failed, using offline fallback', err)
+      }
+    }
+
+    // Offline client fallback
     let res = 0
     if (op === 'sqrt') {
       if (val < 0) {
@@ -137,6 +161,40 @@ export default function App() {
     const formatted = Number(res.toFixed(10)).toString()
     setDisplay(formatted)
     setIsNewCalculation(true)
+  }
+
+  const toggleHistory = async () => {
+    const nextState = !showHistory
+    setShowHistory(nextState)
+    if (nextState && API_BASE) {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/calculator/history`)
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data) && data.length > 0) {
+            const apiItems = data.map(d => ({
+              expr: d.expression,
+              res: d.result,
+              time: d.timestamp || ''
+            }))
+            setHistory(apiItems)
+          }
+        }
+      } catch (err) {
+        console.warn('History API fetch failed, keeping local ledger', err)
+      }
+    }
+  }
+
+  const handleClearHistory = async () => {
+    setHistory([])
+    if (API_BASE) {
+      try {
+        await fetch(`${API_BASE}/api/v1/calculator/history`, { method: 'DELETE' })
+      } catch {
+        // ignore offline
+      }
+    }
   }
 
   // Keyboard support
@@ -202,7 +260,7 @@ export default function App() {
           </button>
           <button 
             className={`pill-btn ${showHistory ? 'active' : ''}`}
-            onClick={() => setShowHistory(!showHistory)}
+            onClick={toggleHistory}
           >
             🕒 History ({history.length})
           </button>
@@ -232,7 +290,7 @@ export default function App() {
               <button 
                 className="pill-btn" 
                 style={{ width: '100%', marginTop: '10px', background: '#272732' }}
-                onClick={() => setHistory([])}
+                onClick={handleClearHistory}
               >
                 Clear History
               </button>
