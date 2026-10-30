@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'https://python-basic-calculator-1.onrender.com').replace(/\/+$/, '')
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
 
 export default function App() {
   const [expression, setExpression] = useState('')
