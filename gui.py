@@ -656,12 +656,29 @@ class CalculatorProGUI:
         self._update_display()
 
     def backspace(self):
-        if len(self.active_input) > 1 and self.active_input != "0":
-            self.active_input = self.active_input[:-1]
-            self.is_new_calculation = False
-        else:
+        if self.is_new_calculation and not self.current_expression:
             self.active_input = "0"
-            self.is_new_calculation = True
+            self._update_display()
+            return
+
+        if not self.is_new_calculation:
+            if len(self.active_input) > 1:
+                self.active_input = self.active_input[:-1]
+            else:
+                self.active_input = "0"
+                self.is_new_calculation = True
+        elif self.current_expression:
+            trimmed = self.current_expression.strip()
+            parts = trimmed.split()
+            if len(parts) > 1:
+                self.current_expression = " ".join(parts[:-2]) + (" " if len(parts) > 2 else "")
+                self.active_input = parts[-2]
+                self.is_new_calculation = False
+            else:
+                self.active_input = parts[0] if parts else "0"
+                self.current_expression = ""
+                self.is_new_calculation = False
+
         self._update_display()
 
     def clear_entry(self):
@@ -673,6 +690,7 @@ class CalculatorProGUI:
         self.current_expression = ""
         self.active_input = "0"
         self.is_new_calculation = True
+        self.preview_label.configure(text="")
         self._update_display()
         self.show_toast("Cleared")
 
@@ -698,7 +716,7 @@ class CalculatorProGUI:
         self.active_input = formatted
         self.current_expression = ""
         self.is_new_calculation = True
-        self.result_label.configure(text=formatted)
+        self._update_display(is_result=True)
         self.show_toast(f"= {formatted}")
 
     def copy_result_to_clipboard(self):
@@ -710,9 +728,21 @@ class CalculatorProGUI:
         except Exception:
             self.show_toast("Copy failed", is_error=True)
 
-    def _update_display(self):
-        self.preview_label.configure(text=self.current_expression)
-        text = self.active_input
+    def _update_display(self, is_result: bool = False):
+        if is_result:
+            text = self.active_input
+        else:
+            if self.current_expression:
+                if self.is_new_calculation:
+                    display_text = self.current_expression.strip()
+                else:
+                    display_text = f"{self.current_expression}{self.active_input}".strip()
+                self.preview_label.configure(text=self.current_expression)
+                text = display_text
+            else:
+                self.preview_label.configure(text="")
+                text = self.active_input
+
         if len(text) > 16:
             self.result_label.configure(font=("Segoe UI", 18, "bold"), text=text)
         elif len(text) > 11:

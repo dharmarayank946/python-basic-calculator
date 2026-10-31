@@ -69,31 +69,44 @@ export default function App() {
       setDisplay(digit)
       setIsNewCalculation(false)
     } else {
-      setDisplay(display + digit)
+      // If ends with operator, add space before digit: "5 +" -> "5 + 9"
+      if (/[\+\−\×\÷\^]\s*$/.test(display)) {
+        setDisplay(`${display} ${digit}`)
+      } else {
+        setDisplay(display + digit)
+      }
     }
   }
 
   const handleOperator = (op) => {
-    setIsNewCalculation(false)
     if (display === 'Error') {
       setDisplay('0')
+      setIsNewCalculation(true)
       return
     }
-    const current = expression ? `${expression} ${display} ${op}` : `${display} ${op}`
-    setExpression(current)
-    setDisplay('0')
+
+    setIsNewCalculation(false)
+
+    // If display already ends with an operator, replace it
+    if (/[\+\−\×\÷\^]\s*$/.test(display)) {
+      setDisplay(display.replace(/[\+\−\×\÷\^]\s*$/, `${op} `))
+    } else {
+      setDisplay(`${display} ${op} `)
+    }
   }
 
   const handleEquals = async () => {
-    const fullExpr = expression ? `${expression} ${display}` : display
+    const fullExpr = display.trim()
+    if (!fullExpr || fullExpr === 'Error') return
+
     const res = await evaluateMath(fullExpr)
     
-    if (res !== 'Error' && !res.includes('Cannot') && !res.includes('Invalid')) {
+    if (res !== 'Error' && !res.includes('Cannot') && !res.includes('Invalid') && !res.includes('Malformed')) {
       const item = { expr: fullExpr, res, time: new Date().toLocaleTimeString() }
       setHistory(prev => [item, ...prev].slice(0, 30))
     }
+    setExpression(`${fullExpr} =`)
     setDisplay(res)
-    setExpression('')
     setIsNewCalculation(true)
   }
 
@@ -103,12 +116,32 @@ export default function App() {
     setIsNewCalculation(true)
   }
 
+  const handleDecimal = () => {
+    const lastToken = display.split(/[\s+\−\×\÷\^]+/).pop() || ''
+    if (!lastToken.includes('.')) {
+      if (isNewCalculation || display === '0' || display === 'Error') {
+        setDisplay('0.')
+        setIsNewCalculation(false)
+      } else {
+        setDisplay(display + '.')
+      }
+    }
+  }
+
   const handleBackspace = () => {
     if (isNewCalculation || display === 'Error' || display.length <= 1) {
       setDisplay('0')
       setIsNewCalculation(true)
+      return
+    }
+
+    let trimmed = display.trimEnd()
+    // If ends with an operator like "5 +", remove the operator and space
+    if (/[\+\−\×\÷\^]$/.test(trimmed)) {
+      trimmed = trimmed.slice(0, -1).trimEnd()
+      setDisplay(trimmed || '0')
     } else {
-      setDisplay(display.slice(0, -1))
+      setDisplay(trimmed.slice(0, -1) || '0')
     }
   }
 
@@ -203,7 +236,7 @@ export default function App() {
       if (e.key >= '0' && e.key <= '9') {
         handleDigit(e.key)
       } else if (e.key === '.') {
-        if (!display.includes('.')) handleDigit('.')
+        handleDecimal()
       } else if (e.key === '+') {
         handleOperator('+')
       } else if (e.key === '-') {
@@ -339,7 +372,7 @@ export default function App() {
             {mode === 'scientific' && <button className="key-btn key-sci" onClick={() => handleDigit(')')}>)</button>}
 
             <button className="key-btn" style={{ gridColumn: mode === 'scientific' ? 'span 2' : 'span 1' }} onClick={() => handleDigit('0')}>0</button>
-            <button className="key-btn" onClick={() => { if (!display.includes('.')) handleDigit('.') }}>.</button>
+            <button className="key-btn" onClick={handleDecimal}>.</button>
             <button className="key-btn key-equals" style={{ gridColumn: mode === 'scientific' ? 'span 2' : 'span 2' }} onClick={handleEquals}>=</button>
           </div>
         )}
