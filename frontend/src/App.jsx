@@ -17,48 +17,40 @@ export default function App() {
   }
 
   // Safe client-side math evaluator with API server fallback
-  const evaluateMath = useCallback(async (expr) => {
+  const evaluateMath = useCallback((expr) => {
     if (!expr || expr === '0') return '0'
 
-    // Clean display symbols
-    const cleanExpr = expr
+    let cleanExpr = expr
       .replace(/×/g, '*')
       .replace(/÷/g, '/')
       .replace(/−/g, '-')
       .replace(/\^/g, '**')
+      .trim()
 
-    // Try API if configured
-    if (API_BASE) {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/calculator/evaluate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expression: cleanExpr })
-        })
-        const data = await res.json()
-        if (data.success) {
-          return data.formatted
-        } else {
-          return data.error || 'Error'
-        }
-      } catch (err) {
-        console.warn('API fetch failed, falling back to client evaluation', err)
-      }
+    // Strip trailing operator if any (e.g. "5 +")
+    cleanExpr = cleanExpr.replace(/[\+\-*/^]+$/, '').trim()
+    if (!cleanExpr) return '0'
+
+    // Check division by zero
+    if (/\/\s*0(?![.\d])/.test(cleanExpr)) {
+      return 'Cannot divide by zero'
     }
 
-    // Safe client-side evaluation without eval()
+    // Whitelist characters to prevent arbitrary code execution
+    if (!/^[\d\s+\-*/().%^eE]+$/.test(cleanExpr)) {
+      return 'Invalid input'
+    }
+
     try {
-      // Whitelist characters to prevent arbitrary code
-      if (!/^[\d\s+\-*/().%^eE]+$/.test(cleanExpr)) {
-        return 'Invalid input'
-      }
-      // Use Function constructor with math scope, avoiding global access
-      const sanitized = cleanExpr.replace(/(\d+)%/g, '($1/100)')
+      const sanitized = cleanExpr.replace(/(\d+(?:\.\d+)?)%/g, '($1/100)')
       const fn = new Function(`'use strict'; return (${sanitized});`)
       const res = fn()
       if (typeof res !== 'number' || isNaN(res)) return 'Error'
       if (!isFinite(res)) return 'Cannot divide by zero'
-      return Number(res.toFixed(10)).toString()
+
+      // Float rounding fix for precision (e.g. 0.1 + 0.2 = 0.3)
+      const rounded = Number(Math.round(res + 'e12') + 'e-12')
+      return String(rounded)
     } catch {
       return 'Malformed expression'
     }
@@ -67,11 +59,12 @@ export default function App() {
   const handleDigit = (digit) => {
     if (isNewCalculation || display === '0' || display === 'Error') {
       setDisplay(digit)
+      setExpression('')
       setIsNewCalculation(false)
     } else {
-      // If ends with operator, add space before digit: "5 +" -> "5 + 9"
+      // If display ends with operator or operator space, append digit cleanly
       if (/[\+\−\×\÷\^]\s*$/.test(display)) {
-        setDisplay(`${display} ${digit}`)
+        setDisplay(`${display.trimEnd()} ${digit}`)
       } else {
         setDisplay(display + digit)
       }
@@ -85,21 +78,27 @@ export default function App() {
       return
     }
 
+    // If starting after a previous calculation, continue chaining from current result
     setIsNewCalculation(false)
 
     // If display already ends with an operator, replace it
     if (/[\+\−\×\÷\^]\s*$/.test(display)) {
       setDisplay(display.replace(/[\+\−\×\÷\^]\s*$/, `${op} `))
     } else {
-      setDisplay(`${display} ${op} `)
+      setDisplay(`${display.trimEnd()} ${op} `)
     }
   }
 
-  const handleEquals = async () => {
+  const handleEquals = () => {
     const fullExpr = display.trim()
     if (!fullExpr || fullExpr === 'Error') return
 
-    const res = await evaluateMath(fullExpr)
+    // If user clicks equals repeatedly after evaluation, maintain result
+    if (isNewCalculation && expression.endsWith('=')) {
+      return
+    }
+
+    const res = evaluateMath(fullExpr)
     
     if (res !== 'Error' && !res.includes('Cannot') && !res.includes('Invalid') && !res.includes('Malformed')) {
       const item = { expr: fullExpr, res, time: new Date().toLocaleTimeString() }
@@ -108,6 +107,22 @@ export default function App() {
     setExpression(`${fullExpr} =`)
     setDisplay(res)
     setIsNewCalculation(true)
+
+    // Asynchronously log to Render backend in the background without blocking the UI
+    if (API_BASE) {
+      try {
+        const cleanExpr = fullExpr
+          .replace(/×/g, '*')
+          .replace(/÷/g, '/')
+          .replace(/−/g, '-')
+          .replace(/\^/g, '**')
+        fetch(`${API_BASE}/api/v1/calculator/evaluate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expression: cleanExpr })
+        }).catch(() => {})
+      } catch (_) {}
+    }
   }
 
   const handleClear = () => {
